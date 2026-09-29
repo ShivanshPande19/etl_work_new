@@ -124,6 +124,16 @@ def month_block(ws, r, month, brands, ncol, last):
         fmt=INR, indent=1, border=Border(left=hair, right=hair, top=med, bottom=med)).value = grand
     ws.row_dimensions[r].height = 22
     r += 1
+
+    # per-month ZONE TOTAL callout (right after this month's table)
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=max(2, ncol - 2))
+    sty(ws.cell(r, 1), bold=True, size=11.5, color=BLUE, fill=YELLOW, align="left",
+        indent=1).value = f"ZONE TOTAL  \u2014  MONTH OF {month['name'].upper()} {yr}"
+    ws.merge_cells(start_row=r, start_column=ncol - 1, end_row=r, end_column=ncol)
+    sty(ws.cell(r, ncol - 1), bold=True, size=12.5, color=RED, fill=YELLOW,
+        align="right", fmt=INR, indent=1).value = grand
+    ws.row_dimensions[r].height = 22
+    r += 1
     return r, grand, brand_tot
 
 
