@@ -32,17 +32,17 @@ ZONES = {
     "BENNETT ":   {"start": 66},
 }
 
-# ---------- palette (black + red + neutral) ----------
-INK    = "0A0A0A"   # title band / total row
-INK2   = "1A1A1A"   # column header fill
-REDF   = "D02128"   # brand red (fills on white)
-REDT   = "EF4444"   # brand red (text on dark)
-GREY   = "8A8A8A"   # secondary text
-GREYD  = "5A5A5A"   # darker secondary
-INKTX  = "141414"   # primary text
-LINE   = "E6E6E6"   # hairline borders
-BAND   = "FAFAFA"   # zebra
-FILL2  = "F4F4F4"   # section / total-col fill
+# ---------- palette (soothing: teal-slate + soft sage + warm neutral) ----------
+INK    = "34515B"   # deep muted teal-slate (title / total band)
+INK2   = "4A6D76"   # muted teal (column header fill)
+REDF   = "4F7D6E"   # soft sage accent  (fills on white)  [grand total, highlights]
+REDT   = "9BC3B6"   # light sage accent (text on the dark band)
+GREY   = "8B969D"   # secondary text (cool gray)
+GREYD  = "5C6B72"   # darker secondary
+INKTX  = "2F3E45"   # primary text (dark slate)
+LINE   = "E7E2D9"   # hairline borders (soft warm)
+BAND   = "F7F5F0"   # zebra (warm off-white)
+FILL2  = "EDF2EF"   # section / total-col fill (pale sage-gray)
 WHITE  = "FFFFFF"
 
 # Indian numbering format: <1 lakh -> thousands; lakh band; crore band

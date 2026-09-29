@@ -7,9 +7,9 @@ from matplotlib.patches import Rectangle
 from openpyxl import load_workbook
 
 WB = "SEPTEMBER 2026 - ZONE SALES REPORT (BRANDS x DAYS).xlsx"
-INK="#0A0A0A"; INK2="#1A1A1A"; RED="#D02128"; REDT="#EF4444"
-GREY="#8A8A8A"; GREYD="#5A5A5A"; INKTX="#141414"; LINE="#E6E6E6"
-BAND="#FAFAFA"; FILL2="#F4F4F4"; WHITE="#FFFFFF"
+INK="#34515B"; INK2="#4A6D76"; RED="#4F7D6E"; REDT="#9BC3B6"
+GREY="#8B969D"; GREYD="#5C6B72"; INKTX="#2F3E45"; LINE="#E7E2D9"
+BAND="#F7F5F0"; FILL2="#EDF2EF"; WHITE="#FFFFFF"; DASH="#C4C0B6"
 
 
 def inr(n):
@@ -102,7 +102,7 @@ def render(sheet, path):
                 if (rr-1)==top_row: txt.set_color(RED); txt.set_fontweight("bold")
                 else: txt.set_color(GREYD)
             elif data[rr-1][cc]=="\u2013":
-                txt.set_color("#C4C4C4")
+                txt.set_color(DASH)
             else:
                 txt.set_color(INKTX); txt.set_ha("right")
     plt.savefig(path,dpi=130,bbox_inches="tight",facecolor="white"); print("wrote",path)
