@@ -2,78 +2,106 @@
 """
 Build a premium, zone-wise September sales report from 'MASTER SALES REPORT -2.xlsx'.
 
-- One formatted sheet per zone (day-wise rows x brand-wise columns)
-- Daily total per day, brand-wise column totals, and zone grand total (ALL recomputed,
-  because the source TOTAL columns contain formula errors)
-- A summary/analytics block per zone (brand contribution %, best day, daily average, etc.)
+Design language: near-black + red accent + neutral greys, generous spacing,
+right-aligned figures (financial standard), thin rules, and the Indian
+numbering system (lakh/crore grouping, e.g. Rs 4,35,705).
+
+Output:
+- One styled sheet per zone (day-wise rows x brand-wise columns)
+- Daily total column, brand-wise totals row, brand share % row
+- A per-zone analytics block (grand total, best day, daily average, top brand ...)
 - A cover 'SUMMARY' sheet comparing all zones
+All totals are recomputed from the daily data (source TOTAL columns had errors).
 """
 
 import datetime as dt
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.cell.rich_text import CellRichText, TextBlock
+from openpyxl.cell.text import InlineFont
 
 SRC = "MASTER SALES REPORT -2.xlsx"
 OUT = "SEPTEMBER 2026 - ZONE SALES REPORT.xlsx"
 YEAR = 2026
+FONT = "Segoe UI"
 
-# Where each zone's September block starts, and its layout
-# layout: first brand column index, total column index (1-based)
 ZONES = {
     "ALPHA 1":    {"start": 317},
     "CENTRAL 50": {"start": 317},
     "BENNETT ":   {"start": 66},
 }
 
-# ---------- palette ----------
-DARK   = "0F2D3F"   # title band
-BLUE   = "16537E"   # header / grand total
-LTBLUE = "D6E4F0"   # brand-total row / accents
-BAND   = "F2F7FB"   # zebra band
-WEEK   = "FCEEEC"   # weekend tint
+# ---------- palette (black + red + neutral) ----------
+INK    = "0A0A0A"   # title band / total row
+INK2   = "1A1A1A"   # column header fill
+REDF   = "D02128"   # brand red (fills on white)
+REDT   = "EF4444"   # brand red (text on dark)
+GREY   = "8A8A8A"   # secondary text
+GREYD  = "5A5A5A"   # darker secondary
+INKTX  = "141414"   # primary text
+LINE   = "E6E6E6"   # hairline borders
+BAND   = "FAFAFA"   # zebra
+FILL2  = "F4F4F4"   # section / total-col fill
 WHITE  = "FFFFFF"
-GREY   = "8A9BA8"
-BORDERC= "D9E2EC"
 
-INR = '"\u20b9"#,##0'
+# Indian numbering format: <1 lakh -> thousands; lakh band; crore band
+INR = '[>=10000000]"\u20b9"##\\,##\\,##\\,##0;[>=100000]"\u20b9"##\\,##\\,##0;"\u20b9"#,##0'
 PCT = '0.0%'
 
-thin = Side(style="thin", color=BORDERC)
-box = Border(left=thin, right=thin, top=thin, bottom=thin)
+hair = Side(style="thin", color=LINE)
+box = Border(left=hair, right=hair, top=hair, bottom=hair)
+bottom_only = Border(bottom=Side(style="thin", color=LINE))
 
 
-def cell(ws, r, c, value=None, *, bold=False, size=11, color="1A2027",
-         fill=None, align="center", fmt=None, border=True, italic=False, wrap=False):
-    cl = ws.cell(r, c, value)
-    cl.font = Font(name="Calibri", bold=bold, size=size, color=color, italic=italic)
-    cl.alignment = Alignment(horizontal=align, vertical="center", wrap_text=wrap)
+def inr(n):
+    """Indian-grouped currency string, e.g. 3514180 -> 'Rs 35,14,180'."""
+    n = int(round(n))
+    sign = "-" if n < 0 else ""
+    s = str(abs(n))
+    if len(s) > 3:
+        last3 = s[-3:]
+        rest = s[:-3]
+        parts = []
+        while len(rest) > 2:
+            parts.insert(0, rest[-2:])
+            rest = rest[:-2]
+        if rest:
+            parts.insert(0, rest)
+        grouped = ",".join(parts) + "," + last3
+    else:
+        grouped = s
+    return f"{sign}\u20b9{grouped}"
+
+
+def sty(cl, *, bold=False, size=11, color=INKTX, fill=None, align="center",
+        fmt=None, border=box, italic=False, wrap=False, indent=0, font=FONT):
+    cl.font = Font(name=font, bold=bold, size=size, color=color, italic=italic)
+    cl.alignment = Alignment(horizontal=align, vertical="center",
+                             wrap_text=wrap, indent=indent)
     if fill:
         cl.fill = PatternFill("solid", fgColor=fill)
     if fmt:
         cl.number_format = fmt
-    if border:
-        cl.border = box
+    if border is not None:
+        cl.border = border
     return cl
 
 
 def extract(ws, start):
-    """Return (brands list, rows) where rows = list of dicts {date, day, values{brand:val}}."""
     max_col = ws.max_column
-    # header row is row 1; TOTAL column is last header cell containing 'TOTAL'
     headers = {c: (str(ws.cell(1, c).value).strip() if ws.cell(1, c).value else "")
                for c in range(1, max_col + 1)}
     total_col = max(c for c, h in headers.items() if "TOTAL" in h.upper())
-    # brand columns: from col 4 (D) up to total_col-1, with a non-empty header
     brand_cols = [(c, headers[c]) for c in range(4, total_col) if headers[c]]
 
     rows = []
     r = start
     while r <= ws.max_row:
-        day = ws.cell(r, 3).value      # DAY column
-        date = ws.cell(r, 2).value     # DATE column
+        day = ws.cell(r, 3).value
+        date = ws.cell(r, 2).value
         if (day in (None, "")) and (date in (None, "")):
-            break  # end of daily block (blank rows / totals row)
+            break
         if day in (None, ""):
             r += 1
             continue
@@ -83,135 +111,180 @@ def extract(ws, start):
             vals[name] = float(v) if isinstance(v, (int, float)) else 0.0
         rows.append({"day": str(day).strip().title(), "values": vals})
         r += 1
-
-    # assign clean dates Sept 1..N in row order
     for i, row in enumerate(rows):
         row["date"] = dt.date(YEAR, 9, i + 1)
-
-    # keep only brands with any non-zero value in September
     active = [name for _, name in brand_cols
               if any(row["values"].get(name, 0) for row in rows)]
     return active, rows
 
 
-def build_zone_sheet(wb, zone_name, brands, rows):
-    ws = wb.create_sheet(zone_name.strip())
-    ncol = 2 + len(brands) + 1  # Date, Day, brands..., Daily Total
-    last_col_letter = get_column_letter(ncol)
+def set_widths(ws, widths):
+    for idx, w in widths.items():
+        ws.column_dimensions[get_column_letter(idx)].width = w
 
-    # ---- Title band ----
-    ws.merge_cells(f"A1:{last_col_letter}1")
-    t = ws.cell(1, 1, f"{zone_name.strip()}  \u2014  ZONE SALES REPORT")
-    t.font = Font(name="Calibri", bold=True, size=20, color=WHITE)
-    t.alignment = Alignment(horizontal="center", vertical="center")
-    t.fill = PatternFill("solid", fgColor=DARK)
-    ws.row_dimensions[1].height = 34
 
-    ws.merge_cells(f"A2:{last_col_letter}2")
-    s = ws.cell(2, 1, f"September {YEAR}   \u2022   Day-wise & Brand-wise Sales   \u2022   Amounts in \u20b9")
-    s.font = Font(name="Calibri", size=11, italic=True, color=WHITE)
-    s.alignment = Alignment(horizontal="center", vertical="center")
-    s.fill = PatternFill("solid", fgColor=BLUE)
+def title_band(ws, ncol, zone, subtitle):
+    last = get_column_letter(ncol)
+    # Row 1: big title with red first letter
+    ws.merge_cells(f"A1:{last}1")
+    zt = zone.strip()
+    rich = CellRichText([
+        TextBlock(InlineFont(rFont=FONT, b=True, sz=22, color="FF" + REDT), zt[0]),
+        TextBlock(InlineFont(rFont=FONT, b=True, sz=22, color="FFFFFFFF"),
+                  zt[1:] + "      SEPTEMBER 2026"),
+    ])
+    c = ws.cell(1, 1); c.value = rich
+    c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    c.fill = PatternFill("solid", fgColor=INK)
+    ws.row_dimensions[1].height = 42
+    # Row 2: subtitle
+    ws.merge_cells(f"A2:{last}2")
+    sty(ws.cell(2, 1), size=10.5, color="C9C9C9", align="left", fill=INK,
+        border=None, indent=1).value = subtitle
     ws.row_dimensions[2].height = 20
+    # Row 3: red accent rule
+    ws.merge_cells(f"A3:{last}3")
+    ws.cell(3, 1).fill = PatternFill("solid", fgColor=REDF)
+    ws.row_dimensions[3].height = 4
+    # Row 4: spacer
+    ws.row_dimensions[4].height = 8
 
-    # ---- Header row ----
-    hr = 4
-    cell(ws, hr, 1, "DATE", bold=True, color=WHITE, fill=BLUE)
-    cell(ws, hr, 2, "DAY", bold=True, color=WHITE, fill=BLUE)
+
+def build_zone_sheet(wb, zone, brands, rows):
+    ws = wb.create_sheet(zone.strip())
+    ws.sheet_view.showGridLines = False
+    ncol = 2 + len(brands) + 1
+    dtot_col = ncol
+    subtitle = "Day-wise & Brand-wise Sales   \u2022   Amounts in \u20b9 (INR)   \u2022   Recomputed from daily data"
+    title_band(ws, ncol, zone, subtitle)
+
+    # ---- header ----
+    hr = 5
+    sty(ws.cell(hr, 1), bold=True, size=10.5, color=WHITE, fill=INK2, wrap=True).value = "DATE"
+    sty(ws.cell(hr, 2), bold=True, size=10.5, color=WHITE, fill=INK2, wrap=True).value = "DAY"
     for j, b in enumerate(brands):
-        cell(ws, hr, 3 + j, b.strip().upper(), bold=True, color=WHITE, fill=BLUE, wrap=True)
-    cell(ws, hr, ncol, "DAILY TOTAL", bold=True, color=WHITE, fill=BLUE, wrap=True)
-    ws.row_dimensions[hr].height = 30
+        sty(ws.cell(hr, 3 + j), bold=True, size=10, color=WHITE, fill=INK2,
+            wrap=True).value = b.strip().upper()
+    sty(ws.cell(hr, dtot_col), bold=True, size=10.5, color=WHITE, fill=REDF,
+        wrap=True).value = "DAILY TOTAL"
+    ws.row_dimensions[hr].height = 34
 
-    # ---- Data rows ----
-    brand_totals = {b: 0.0 for b in brands}
+    # ---- data ----
+    brand_tot = {b: 0.0 for b in brands}
     grand = 0.0
-    best_day = None
+    best = None
     best_val = -1
     r = hr + 1
     for i, row in enumerate(rows):
-        is_weekend = row["day"] in ("Saturday", "Sunday")
-        rowfill = WEEK if is_weekend else (BAND if i % 2 else WHITE)
-        cell(ws, r, 1, row["date"].strftime("%d %b"), fill=rowfill,
-             bold=is_weekend)
-        cell(ws, r, 2, row["day"], fill=rowfill, color=(BLUE if is_weekend else "44515C"),
-             bold=is_weekend)
-        dtot = 0.0
+        wknd = row["day"] in ("Saturday", "Sunday")
+        rf = BAND if i % 2 else WHITE
+        sty(ws.cell(r, 1), size=10.5, color=INKTX, fill=rf,
+            align="center").value = row["date"].strftime("%d %b")
+        sty(ws.cell(r, 2), size=10.5, bold=wknd, color=(REDF if wknd else GREYD),
+            fill=rf, align="center").value = row["day"]
+        dsum = 0.0
         for j, b in enumerate(brands):
             v = row["values"].get(b, 0.0)
-            dtot += v
-            brand_totals[b] += v
-            cell(ws, r, 3 + j, v if v else None, fmt=INR, fill=rowfill,
-                 color=("C6CDD4" if not v else "1A2027"))
-        cell(ws, r, ncol, dtot, fmt=INR, bold=True, fill=rowfill, color=BLUE)
-        grand += dtot
-        if dtot > best_val:
-            best_val, best_day = dtot, row
+            dsum += v
+            brand_tot[b] += v
+            ccell = ws.cell(r, 3 + j)
+            if v:
+                sty(ccell, size=10.5, color=INKTX, fill=rf, align="right",
+                    fmt=INR, indent=1).value = v
+            else:
+                sty(ccell, size=10.5, color="C4C4C4", fill=rf,
+                    align="center").value = "\u2013"
+        sty(ws.cell(r, dtot_col), bold=True, size=10.5, color=INKTX, fill=FILL2,
+            align="right", fmt=INR, indent=1).value = dsum
+        grand += dsum
+        if dsum > best_val:
+            best_val, best = dsum, row
+        ws.row_dimensions[r].height = 19
         r += 1
 
-    # ---- Brand totals row ----
-    cell(ws, r, 1, "TOTAL", bold=True, color=WHITE, fill=BLUE)
-    cell(ws, r, 2, "", fill=BLUE)
+    # ---- totals row ----
+    sty(ws.cell(r, 1), bold=True, size=11, color=WHITE, fill=INK,
+        align="center").value = "TOTAL"
+    sty(ws.cell(r, 2), fill=INK, color=WHITE, border=box).value = ""
     for j, b in enumerate(brands):
-        cell(ws, r, 3 + j, brand_totals[b], fmt=INR, bold=True, fill=LTBLUE, color=DARK)
-    cell(ws, r, ncol, grand, fmt=INR, bold=True, fill=BLUE, color=WHITE)
-    ws.row_dimensions[r].height = 22
-    totals_row = r
+        sty(ws.cell(r, 3 + j), bold=True, size=10.5, color=WHITE, fill=INK,
+            align="right", fmt=INR, indent=1).value = brand_tot[b]
+    sty(ws.cell(r, dtot_col), bold=True, size=12, color=WHITE, fill=REDF,
+        align="right", fmt=INR, indent=1).value = grand
+    ws.row_dimensions[r].height = 26
+    tot_row = r
 
-    # ---- Contribution % row ----
+    # ---- share % row ----
     r += 1
-    cell(ws, r, 1, "SHARE %", bold=True, color=WHITE, fill=DARK)
-    cell(ws, r, 2, "", fill=DARK)
+    sty(ws.cell(r, 1), bold=True, size=9.5, color=GREYD, fill=FILL2,
+        align="center").value = "SHARE %"
+    sty(ws.cell(r, 2), fill=FILL2, border=box).value = ""
+    top_b = max(brand_tot, key=brand_tot.get)
     for j, b in enumerate(brands):
-        share = (brand_totals[b] / grand) if grand else 0
-        cell(ws, r, 3 + j, share, fmt=PCT, bold=True, fill="EAF1F8", color=BLUE)
-    cell(ws, r, ncol, (1 if grand else 0), fmt=PCT, bold=True, fill=DARK, color=WHITE)
-    ws.row_dimensions[r].height = 20
+        share = (brand_tot[b] / grand) if grand else 0
+        is_top = (b == top_b)
+        sty(ws.cell(r, 3 + j), bold=is_top, size=10, color=(REDF if is_top else GREYD),
+            fill=FILL2, align="right", fmt=PCT, indent=1).value = share
+    sty(ws.cell(r, dtot_col), bold=True, size=10, color=INKTX, fill=FILL2,
+        align="right", fmt=PCT, indent=1).value = 1 if grand else 0
+    ws.row_dimensions[r].height = 18
 
-    # ---- Column widths ----
-    ws.column_dimensions["A"].width = 11
-    ws.column_dimensions["B"].width = 12
-    for j in range(len(brands)):
-        ws.column_dimensions[get_column_letter(3 + j)].width = 15
-    ws.column_dimensions[last_col_letter].width = 16
+    # ---- widths ----
+    widths = {1: 11, 2: 12}
+    for j, b in enumerate(brands):
+        longest_word = max((len(w) for w in b.strip().split()), default=6)
+        numw = max(len(inr(brand_tot[b])), 9)
+        widths[3 + j] = max(longest_word + 3, numw + 3, 14)
+    widths[dtot_col] = max(len(inr(grand)) + 4, 15)
+    set_widths(ws, widths)
 
     ws.freeze_panes = ws.cell(hr + 1, 3)
-    ws.sheet_view.showGridLines = False
 
-    # ---- Summary / analytics block ----
+    # ---- summary block ----
     sr = r + 2
-    ws.merge_cells(start_row=sr, start_column=1, end_row=sr, end_column=ncol)
-    h = ws.cell(sr, 1, "ZONE SUMMARY  \u2014  September " + str(YEAR))
-    h.font = Font(name="Calibri", bold=True, size=13, color=WHITE)
-    h.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-    h.fill = PatternFill("solid", fgColor=DARK)
-    ws.row_dimensions[sr].height = 24
+    last = get_column_letter(ncol)
+    ws.merge_cells(f"A{sr}:{last}{sr}")
+    sty(ws.cell(sr, 1), bold=True, size=12.5, color=WHITE, fill=INK,
+        align="left", border=None, indent=1).value = "ZONE SUMMARY  \u2014  September 2026"
+    ws.row_dimensions[sr].height = 26
+    # red rule under summary heading
+    ws.merge_cells(f"A{sr+1}:{last}{sr+1}")
+    ws.cell(sr + 1, 1).fill = PatternFill("solid", fgColor=REDF)
+    ws.row_dimensions[sr + 1].height = 3
 
     ndays = len(rows)
-    top_brand = max(brand_totals, key=brand_totals.get)
     metrics = [
-        ("Zone Grand Total", f"\u20b9{grand:,.0f}"),
+        ("Zone Grand Total", inr(grand)),
         ("Operating Days", f"{ndays} days"),
-        ("Average Daily Sales", f"\u20b9{grand/ndays:,.0f}" if ndays else "\u20b90"),
-        ("Best Sales Day", f"{best_day['date'].strftime('%d %b')} ({best_day['day']}) \u2014 \u20b9{best_val:,.0f}"),
-        ("Top Brand", f"{top_brand.strip()} \u2014 \u20b9{brand_totals[top_brand]:,.0f} ({brand_totals[top_brand]/grand*100:.1f}%)"),
-        ("Active Brands", f"{len(brands)}"),
+        ("Average Daily Sales", inr(grand / ndays) if ndays else "\u20b90"),
+        ("Best Sales Day", f"{best['date'].strftime('%d %b')} ({best['day']})  \u2022  {inr(best_val)}"),
+        ("Top Brand", f"{top_b.strip()}  \u2022  {inr(brand_tot[top_b])}  ({brand_tot[top_b]/grand*100:.1f}%)"),
+        ("Active Brands", str(len(brands))),
     ]
-    mr = sr + 1
-    for label, val in metrics:
-        cl = cell(ws, mr, 1, label, bold=True, align="left", fill="EAF1F8", color=DARK)
-        cl.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    mr = sr + 2
+    for i, (label, val) in enumerate(metrics):
+        lab = ws.cell(mr, 1)
+        sty(lab, bold=True, size=10.5, color=GREYD, fill=FILL2, align="left", indent=1).value = label
         ws.merge_cells(start_row=mr, start_column=2, end_row=mr, end_column=ncol)
-        v = ws.cell(mr, 2, val)
-        v.font = Font(name="Calibri", size=11, color="1A2027")
-        v.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-        v.border = box
+        vv = ws.cell(mr, 2)
+        # highlight the grand-total value in red
+        sty(vv, bold=(i == 0), size=(12 if i == 0 else 10.5),
+            color=(REDF if i == 0 else INKTX), align="left", indent=1).value = val
         for cc in range(3, ncol + 1):
             ws.cell(mr, cc).border = box
+        ws.row_dimensions[mr].height = 21
         mr += 1
 
-    return {"grand": grand, "brand_totals": brand_totals, "ndays": ndays,
-            "top_brand": top_brand.strip(), "best": (best_day['date'], best_val),
+    # footer note
+    mr += 1
+    ws.merge_cells(start_row=mr, start_column=1, end_row=mr, end_column=ncol)
+    sty(ws.cell(mr, 1), size=9, italic=True, color=GREY, align="left",
+        border=None, indent=1).value = (
+        "Weekends shown in red \u2022 \u2013 denotes no recorded sale \u2022 "
+        "all totals recomputed from daily brand-wise figures")
+
+    return {"grand": grand, "brand_tot": brand_tot, "ndays": ndays,
+            "top_brand": top_b.strip(), "best": (best['date'], best_val),
             "brands": [b.strip() for b in brands]}
 
 
@@ -219,77 +292,84 @@ def build_summary_sheet(wb, results):
     ws = wb.create_sheet("SUMMARY", 0)
     ws.sheet_view.showGridLines = False
     ncol = 6
-    lastc = get_column_letter(ncol)
-    ws.merge_cells(f"A1:{lastc}1")
-    t = ws.cell(1, 1, "SEPTEMBER 2026  \u2014  ALL-ZONE SALES SUMMARY")
-    t.font = Font(name="Calibri", bold=True, size=20, color=WHITE)
-    t.alignment = Alignment(horizontal="center", vertical="center")
-    t.fill = PatternFill("solid", fgColor=DARK)
-    ws.row_dimensions[1].height = 36
+    title_band(ws, ncol, "SUMMARY",
+               "All-Zone Sales Overview   \u2022   Amounts in \u20b9 (INR)   \u2022   Totals recomputed from daily data")
+    # fix the title text (title_band prints "SUMMARY  SEPTEMBER 2026"); override row1
+    ws.unmerge_cells("A1:F1")
+    ws.merge_cells("A1:F1")
+    rich = CellRichText([
+        TextBlock(InlineFont(rFont=FONT, b=True, sz=22, color="FF" + REDT), "S"),
+        TextBlock(InlineFont(rFont=FONT, b=True, sz=22, color="FFFFFFFF"),
+                  "EPTEMBER 2026      ALL-ZONE SALES SUMMARY"),
+    ])
+    c = ws.cell(1, 1); c.value = rich
+    c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    c.fill = PatternFill("solid", fgColor=INK)
 
-    ws.merge_cells(f"A2:{lastc}2")
-    s = ws.cell(2, 1, "Amounts in \u20b9  \u2022  Totals recomputed from daily brand-wise data")
-    s.font = Font(name="Calibri", size=11, italic=True, color=WHITE)
-    s.alignment = Alignment(horizontal="center", vertical="center")
-    s.fill = PatternFill("solid", fgColor=BLUE)
-
-    hr = 4
-    heads = ["ZONE", "OPERATING DAYS", "ACTIVE BRANDS", "AVG DAILY SALES", "TOP BRAND", "ZONE GRAND TOTAL"]
-    for j, h in enumerate(heads):
-        cell(ws, hr, j + 1, h, bold=True, color=WHITE, fill=BLUE, wrap=True)
-    ws.row_dimensions[hr].height = 30
+    hr = 5
+    heads = ["ZONE", "OPERATING DAYS", "ACTIVE BRANDS", "AVG DAILY SALES",
+             "TOP BRAND", "ZONE GRAND TOTAL"]
+    fills = [INK2, INK2, INK2, INK2, INK2, REDF]
+    for j, (h, f) in enumerate(zip(heads, fills)):
+        sty(ws.cell(hr, j + 1), bold=True, size=10, color=WHITE, fill=f,
+            wrap=True).value = h
+    ws.row_dimensions[hr].height = 34
 
     r = hr + 1
     grand_all = 0
     for i, (zone, d) in enumerate(results.items()):
-        fill = BAND if i % 2 else WHITE
-        cell(ws, r, 1, zone.strip(), bold=True, align="left", fill=fill, color=DARK)
-        cell(ws, r, 2, d["ndays"], fill=fill)
-        cell(ws, r, 3, len(d["brands"]), fill=fill)
-        cell(ws, r, 4, d["grand"] / d["ndays"] if d["ndays"] else 0, fmt=INR, fill=fill)
-        cell(ws, r, 5, d["top_brand"], align="left", fill=fill)
-        cell(ws, r, 6, d["grand"], fmt=INR, bold=True, fill=fill, color=BLUE)
+        rf = BAND if i % 2 else WHITE
+        sty(ws.cell(r, 1), bold=True, size=11, color=INKTX, align="left",
+            fill=rf, indent=1).value = zone.strip()
+        sty(ws.cell(r, 2), size=10.5, color=INKTX, fill=rf).value = f"{d['ndays']} days"
+        sty(ws.cell(r, 3), size=10.5, color=INKTX, fill=rf).value = len(d["brands"])
+        sty(ws.cell(r, 4), size=10.5, color=INKTX, fill=rf, align="right",
+            fmt=INR, indent=1).value = d["grand"] / d["ndays"] if d["ndays"] else 0
+        sty(ws.cell(r, 5), size=10.5, color=INKTX, fill=rf, align="left",
+            indent=1).value = d["top_brand"]
+        sty(ws.cell(r, 6), bold=True, size=11, color=REDF, fill=rf, align="right",
+            fmt=INR, indent=1).value = d["grand"]
         grand_all += d["grand"]
+        ws.row_dimensions[r].height = 24
         r += 1
 
-    cell(ws, r, 1, "ALL ZONES", bold=True, color=WHITE, fill=DARK, align="left")
+    sty(ws.cell(r, 1), bold=True, size=11.5, color=WHITE, fill=INK,
+        align="left", indent=1).value = "ALL ZONES"
     for cc in range(2, 6):
-        cell(ws, r, cc, "", fill=DARK)
-    cell(ws, r, 6, grand_all, fmt=INR, bold=True, fill=DARK, color=WHITE)
-    ws.row_dimensions[r].height = 24
+        sty(ws.cell(r, cc), fill=INK, border=box).value = ""
+    sty(ws.cell(r, 6), bold=True, size=12.5, color=WHITE, fill=REDF, align="right",
+        fmt=INR, indent=1).value = grand_all
+    ws.row_dimensions[r].height = 28
 
-    # note about District 9
     r += 2
     ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=ncol)
-    n = ws.cell(r, 1, "Note: DISTRICT 9 has no September data in the source workbook "
-                      "(only July & August), so it is not included.")
-    n.font = Font(name="Calibri", size=10, italic=True, color=GREY)
-    n.alignment = Alignment(horizontal="left", vertical="center")
+    sty(ws.cell(r, 1), size=9.5, italic=True, color=GREY, align="left",
+        border=None, indent=1).value = (
+        "Note: DISTRICT 9 has no September data in the source workbook "
+        "(only July & August), so it is not included.")
 
-    widths = [16, 16, 15, 18, 22, 20]
-    for j, w in enumerate(widths):
-        ws.column_dimensions[get_column_letter(j + 1)].width = w
+    set_widths(ws, {1: 16, 2: 16, 3: 15, 4: 18, 5: 24, 6: 20})
+    ws.freeze_panes = ws.cell(hr + 1, 1)
 
 
 def main():
     src = load_workbook(SRC, data_only=True)
     out = Workbook()
     out.remove(out.active)
-
     results = {}
     for zone, meta in ZONES.items():
-        ws = src[zone]
-        brands, rows = extract(ws, meta["start"])
+        brands, rows = extract(src[zone], meta["start"])
         print(f"[{zone.strip()}] brands={[b.strip() for b in brands]} days={len(rows)}")
         results[zone] = build_zone_sheet(out, zone, brands, rows)
-
     build_summary_sheet(out, results)
     out.save(OUT)
     print("Saved:", OUT)
-    # verification print
+    total_all = 0
     for zone, d in results.items():
-        chk = sum(d["brand_totals"].values())
-        print(f"  {zone.strip():12s} grand={d['grand']:,.0f} sum(brands)={chk:,.0f} match={abs(chk-d['grand'])<1e-6}")
+        chk = sum(d["brand_tot"].values())
+        total_all += d["grand"]
+        print(f"  {zone.strip():12s} grand={inr(d['grand'])}  sum(brands)={inr(chk)}  ok={abs(chk-d['grand'])<1e-6}")
+    print("  ALL ZONES   ", inr(total_all))
 
 
 if __name__ == "__main__":
