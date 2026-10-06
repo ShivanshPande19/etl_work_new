@@ -28,11 +28,12 @@ W, H = A4
 
 TOP_HEADER = "EAT TRUCK LOVE BY AZIMUTH"
 
-# ---- zones (Business Units) and their brands, in order ----
+# ---- single zone; one page per brand (in order) ----
 ZONES = [
     {
-        "zone": "Big Bear BU",
+        "zone": "Melting Pot BU",
         "brands": [
+            "BIG BEAR BU",
             "OG PIZZA",
             "BUKHARA2BEIJING",
             "THE MOMO BOX",
@@ -41,10 +42,6 @@ ZONES = [
             "KOBY'S",
             "BURRITO BRO'S",
         ],
-    },
-    {
-        "zone": "Melting Pot BU",
-        "brands": ["BIGG BEAR", "EGGSPERT", "THE CHATPATA AFFAIR", "CROWNEST"],
     },
 ]
 
