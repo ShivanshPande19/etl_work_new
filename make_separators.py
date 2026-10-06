@@ -30,10 +30,6 @@ W, H = A4
 # ---- Business Units and their brands (in order) ----
 BUS = [
     {
-        "bu": "MELTING POT BU",
-        "brands": ["BIGG BEAR", "EGGSPERT", "THE CHATPATA AFFAIR", "CROWNEST"],
-    },
-    {
         "bu": "BIG BEAR BU",
         "brands": [
             "OG PIZZA",
@@ -44,6 +40,10 @@ BUS = [
             "KOBY'S",
             "BURRITO BRO'S",
         ],
+    },
+    {
+        "bu": "MELTING POT BU",
+        "brands": ["BIGG BEAR", "EGGSPERT", "THE CHATPATA AFFAIR", "CROWNEST"],
     },
 ]
 
